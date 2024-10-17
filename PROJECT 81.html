@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Chat Website</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+
+
+<script>
+    const WebSocket = require('ws');
+const server = new WebSocket.Server({ port: 3000 });
+
+server.on('connection', (socket) => {
+    socket.on('message', (message) => {
+        // Broadcast the message to all connected clients except the sender
+        server.clients.forEach((client) => {
+            if (client !== socket && client.readyState === WebSocket.OPEN) {
+                client.send(message);
+            }
+        });
+    });
+
+    socket.on('close', () => {
+        console.log('Client disconnected');
+    });
+});
+
+console.log('WebSocket server is running on ws://localhost:3000');
+
+
+
+
+    // DOM elements for text chat
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+// DOM elements for voice chat
+const startVoiceChatBtn = document.getElementById('start-voice-chat');
+const endVoiceChatBtn = document.getElementById('end-voice-chat');
+const localAudio = document.getElementById('localAudio');
+const remoteAudio = document.getElementById('remoteAudio');
+
+// WebRTC setup
+let localStream;
+let peerConnection;
+const servers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+// Socket.io or WebSocket for signaling (this is a placeholder)
+const signalingSocket = new WebSocket('ws://localhost:3000'); // Replace with your server
+
+// When connection opens, handle signaling
+signalingSocket.onmessage = (message) => handleSignal(JSON.parse(message.data));
+
+// Function to start voice chat
+async function startVoiceChat() {
+    try {
+        // Get local audio stream
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localAudio.srcObject = localStream;
+
+        // Create peer connection
+        peerConnection = new RTCPeerConnection(servers);
+        localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
+
+        // Handle ICE candidates
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                signalingSocket.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+            }
+        };
+
+        // Handle receiving tracks (remote audio stream)
+        peerConnection.ontrack = (event) => {
+            remoteAudio.srcObject = event.streams[0];
+        };
+
+        // Create and send offer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        signalingSocket.send(JSON.stringify({ type: 'offer', offer }));
+    } catch (error) {
+        console.error('Error starting voice chat:', error);
+    }
+}
+
+// Function to handle receiving signal data
+async function handleSignal(data) {
+    if (data.type === 'offer') {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        signalingSocket.send(JSON.stringify({ type: 'answer', answer }));
+    } else if (data.type === 'answer') {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+    } else if (data.type === 'candidate') {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+    }
+}
+
+// End voice chat
+function endVoiceChat() {
+    peerConnection.close();
+    localStream.getTracks().forEach((track) => track.stop());
+    localAudio.srcObject = null;
+    remoteAudio.srcObject = null;
+}
+
+// Event listeners for voice chat
+startVoiceChatBtn.addEventListener('click', startVoiceChat);
+endVoiceChatBtn.addEventListener('click', endVoiceChat);
+
+// Existing code for text chat remains here...
+
+// Send text message
+function sendMessage() {
+    const messageText = chatInput.value.trim();
+    if (messageText === "") return;
+
+    const messageEl = document.createElement('div');
+    messageEl.classList.add('message', 'sent');
+    messageEl.innerText = messageText;
+    chatMessages.appendChild(messageEl);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    chatInput.value = '';
+
+    // Simulate receiving a message after 1 second
+    setTimeout(receiveMessage, 1000);
+}
+
+function receiveMessage() {
+    const responses = [
+        "Hello there!",
+        "How can I help you?",
+        "Nice to meet you!",
+        "That's an interesting point.",
+        "I see what you're saying."
+    ];
+    const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+
+    const messageEl = document.createElement('div');
+    messageEl.classList.add('message', 'received');
+    messageEl.innerText = randomResponse;
+    chatMessages.appendChild(messageEl);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+sendBtn.addEventListener('click', sendMessage);
+chatInput.addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
+
+
+
+
+
+</script>
+
+
+<style>
+    audio {
+    display: none;
+}
+
+
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.chat-container {
+    width: 400px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.chat-header {
+    background-color: #007bff;
+    padding: 15px;
+    color: #fff;
+    text-align: center;
+    border-bottom: 1px solid #ccc;
+}
+
+.chat-messages {
+    flex-grow: 1;
+    padding: 10px;
+    overflow-y: auto;
+    background-color: #f9f9f9;
+    height: 300px;
+}
+
+.message {
+    margin-bottom: 10px;
+    padding: 8px;
+    border-radius: 5px;
+    max-width: 75%;
+}
+
+.message.sent {
+    background-color: #d1e7dd;
+    align-self: flex-end;
+    text-align: right;
+}
+
+.message.received {
+    background-color: #f1f1f1;
+    align-self: flex-start;
+}
+
+.chat-input {
+    display: flex;
+    padding: 10px;
+    border-top: 1px solid #ccc;
+}
+
+.chat-input input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin-right: 10px;
+}
+
+.chat-input button {
+    padding: 10px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.chat-input button:hover {
+    background-color: #0056b3;
+}
+
+
+
+
+</style>
+
+
+
+
+
+
+<body>
+    <div class="chat-header">
+        <h2>Chat Room</h2>
+        <button id="start-voice-chat">Start Voice Chat</button>
+        <button id="end-voice-chat">End Voice Chat</button>
+    </div>
+    <audio id="localAudio" autoplay muted></audio>
+    <audio id="remoteAudio" autoplay></audio>
+
+    
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>Chat Room</h2>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <!-- Chat messages will be appended here -->
+        </div>
+        <div class="chat-input">
+            <input type="text" id="chat-input" placeholder="Type your message here...">
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
